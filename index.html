@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asistencia del servicio</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--tx:#1f2430;--mu:#6b7280;--ac:#2f5d8a;--ok:#2e7d4f;--bd:#e2ded4;--gold:#c9941a;--er:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#171a20;--card:#222630;--tx:#eceef2;--mu:#9aa3b2;--ac:#6fa3d6;--ok:#58b57f;--bd:#363b48;--gold:#e0b04a;--er:#f2b8b5}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.4}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:.2rem 0 1rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+h2{font-size:1rem;margin:0 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+label{display:flex;flex-direction:column;font-size:.8rem;color:var(--mu);gap:3px;flex:1 1 150px}
+input{font:inherit;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);width:100%}
+button{font:inherit;padding:9px 16px;border:0;border-radius:8px;background:var(--ac);color:#fff;cursor:pointer}
+button.g{background:transparent;color:var(--mu);padding:4px 8px}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:560px}
+th,td{padding:8px 6px;text-align:center;border-bottom:1px solid var(--bd);font-size:.9rem}
+th:first-child,td:first-child{text-align:left}
+td small{display:block;color:var(--mu)}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--ok)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-weight:600;font-size:.8rem;background:var(--bd)}
+.win{background:var(--gold);color:#fff}
+.sum{display:flex;gap:10px;flex-wrap:wrap;font-size:.9rem;color:var(--mu)}
+.sum b{color:var(--tx)}
+#st{font-size:.85rem;color:var(--mu);margin-bottom:10px}
+#st.err{color:var(--er)}
+</style></head><body><main>
+<h1>⛪ Asistencia del servicio</h1>
+<div id="st">Conectando…</div>
+
+<div class="card"><h2>Serie de prédicas</h2>
+<div class="row">
+<label>Nombre de la serie<input id="sn"></label>
+<label>Primer domingo<input type="date" id="sd"></label>
+<label>Cantidad de domingos<input type="number" id="sc" min="1" max="12"></label>
+<label>Mínimo para premio<input type="number" id="sm" min="1" max="12"></label>
+</div></div>
+
+<div class="card"><h2>Nuevo asistente</h2>
+<div class="row">
+<label>Nombre<input id="n"></label>
+<label>Fecha de nacimiento<input type="date" id="b"></label>
+<label>Teléfono<input id="t" type="tel"></label>
+<button id="add">Agregar</button>
+</div></div>
+
+<div class="card">
+<div class="row" style="margin-bottom:10px"><label style="flex:2 1 200px">Buscar<input id="q" placeholder="Nombre o teléfono"></label>
+<div class="sum" id="sum"></div></div>
+<div class="tw"><table><thead id="th"></thead><tbody id="tb"></tbody></table></div>
+<p id="empty" style="color:var(--mu);text-align:center">Aún no hay asistentes.</p>
+</div>
+</main>
+<script>
+/* ====== CONFIGURA AQUÍ (Supabase > Project Settings > API) ====== */
+const SUPABASE_URL = "https://zatwqpvtrfxdtfsamhzo.supabase.co";
+const SUPABASE_KEY = "sb_publishable_xcIppbC8FI12nQbRicktrQ_VQFcvWdi";
+/* ================================================================ */
+
+const $=id=>document.getElementById(id);
+const H={apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY,"Content-Type":"application/json"};
+async function api(path,method="GET",body,extra={}){
+  const r=await fetch(SUPABASE_URL+"/rest/v1/"+path,{method,headers:{...H,...extra},body:body?JSON.stringify(body):undefined});
+  if(!r.ok)throw new Error(r.status+" "+await r.text());
+  return r.status===204?null:r.json();
+}
+function status(msg,err){$("st").textContent=msg;$("st").className=err?"err":""}
+async function run(fn){try{await fn();status("✔ Conectado y guardado en Supabase")}catch(e){status("Error: "+e.message,true)}}
+
+let serie={nombre:"",inicio:"",cantidad:5,minimo:5},people=[];
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function dates(){const [y,m,d]=serie.inicio.split("-").map(Number);return Array.from({length:serie.cantidad},(_,i)=>new Date(y,m-1,d+7*i))}
+function age(b){if(!b)return"—";const [y,m,d]=b.split("-").map(Number),n=new Date();let a=n.getFullYear()-y;if(n.getMonth()+1<m||(n.getMonth()+1==m&&n.getDate()<d))a--;return a}
+const fmt=d=>d.toLocaleDateString("es",{day:"numeric",month:"short"});
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){
+  const D=dates(),q=$("q").value.toLowerCase();
+  $("th").innerHTML="<tr><th>Asistente</th>"+D.map((d,i)=>`<th>${i+1}<small style="display:block;font-weight:400">${fmt(d)}</small></th>`).join("")+"<th>Total</th><th></th></tr>";
+  const list=people.filter(p=>(p.nombre+(p.telefono||"")).toLowerCase().includes(q));
+  $("tb").innerHTML=list.map(p=>{const c=D.filter((_,i)=>p.asistencia[i]).length,w=c>=serie.minimo;
+    return `<tr><td>${esc(p.nombre)}<small>${age(p.fecha_nacimiento)} años · ${esc(p.telefono||"sin teléfono")}</small></td>`+
+    D.map((_,i)=>`<td><input type="checkbox" ${p.asistencia[i]?"checked":""} data-id="${p.id}" data-i="${i}"></td>`).join("")+
+    `<td><span class="pill ${w?"win":""}">${c}/${D.length}${w?" 🏆":""}</span></td><td><button class="g" data-del="${p.id}" title="Eliminar">✕</button></td></tr>`}).join("");
+  $("empty").style.display=people.length?"none":"block";
+  const win=people.filter(p=>D.filter((_,i)=>p.asistencia[i]).length>=serie.minimo).length;
+  $("sum").innerHTML=`<span>Asistentes: <b>${people.length}</b></span><span>Con premio: <b>${win}</b></span>`+D.map((_,i)=>`<span>D${i+1}: <b>${people.filter(p=>p.asistencia[i]).length}</b></span>`).join("");
+}
+function loadSerie(){$("sn").value=serie.nombre||"";$("sd").value=serie.inicio;$("sc").value=serie.cantidad;$("sm").value=serie.minimo}
+
+["sn","sd","sc","sm"].forEach(id=>$(id).addEventListener("change",()=>{
+  serie.nombre=$("sn").value;serie.inicio=$("sd").value||serie.inicio;
+  serie.cantidad=Math.min(12,Math.max(1,+$("sc").value||5));
+  serie.minimo=Math.min(serie.cantidad,Math.max(1,+$("sm").value||serie.cantidad));
+  loadSerie();render();
+  run(()=>api("config?id=eq.1","PATCH",serie));
+}));
+$("q").addEventListener("input",render);
+$("add").onclick=()=>{const n=$("n").value.trim();if(!n){$("n").focus();return}
+  const row={nombre:n,fecha_nacimiento:$("b").value||null,telefono:$("t").value.trim()||null,asistencia:{}};
+  run(async()=>{const r=await api("asistentes","POST",row,{Prefer:"return=representation"});people.push(r[0]);["n","b","t"].forEach(i=>$(i).value="");render()});
+};
+$("tb").addEventListener("change",e=>{const c=e.target;if(!c.dataset.id)return;
+  const p=people.find(x=>x.id==c.dataset.id);p.asistencia[c.dataset.i]=c.checked;render();
+  run(()=>api("asistentes?id=eq."+p.id,"PATCH",{asistencia:p.asistencia}));
+});
+$("tb").addEventListener("click",e=>{const id=e.target.dataset.del;
+  if(id&&confirm("¿Eliminar a esta persona?"))run(async()=>{await api("asistentes?id=eq."+id,"DELETE");people=people.filter(p=>p.id!=id);render()});
+});
+
+(async()=>{
+  if(SUPABASE_URL.includes("TU-PROYECTO")){status("Falta configurar SUPABASE_URL y SUPABASE_KEY dentro del archivo.",true);serie.inicio=iso(new Date());loadSerie();render();return}
+  await run(async()=>{
+    const [c]=await api("config?id=eq.1&select=*");if(c)serie=c;
+    if(!serie.inicio)serie.inicio=iso(new Date());
+    people=await api("asistentes?select=*&order=creado.asc");
+    people.forEach(p=>p.asistencia=p.asistencia||{});
+    loadSerie();render();
+  });
+})();
+</script></body></html>
